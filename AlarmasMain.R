@@ -13,3 +13,8 @@ familias_importantes <- c('VIX', 'MACROMODEL', 'Alfa Total', 'TOTAL T+ L','DONCH
 carga_datos(familias_importantes)
 
 #### Corridas ----------------------------------------------------------------------
+
+corrida_alarmas('AlarmasDataContableX.R')
+corrida_alarmas('AlarmasDataBBGX.R')
+corrida_alarmas('alarmas_varX.R')
+

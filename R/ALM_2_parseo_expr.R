@@ -49,8 +49,8 @@ transformar_expresion <- function(x, res, nivel_arbol = 1, nivel_llave = 0) {
     var <- get(x_name, envir = sys.frame(pos_frame_ppal))
     
     if (is_atomic(var)) {
-      if (!x_name %in% names(alarm_env$res$variables)) {
-        variables <- get('variables', envir = sys.frame(pos_frame_ppal))
+      variables <- get('variables', envir = sys.frame(pos_frame_ppal))
+      if (!x_name %in% names(variables)) {
         variables <- c(variables, var)
         names(variables)[length(variables)] <- x_name
         # NOTA: Side-effect: estoy modificando la list 'variables' en c_a
