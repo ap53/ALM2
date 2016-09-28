@@ -137,13 +137,13 @@ calc_termino <- function(serie, duracion = 0, start = NULL, familia, post_proces
   ticker_ <- familia
   pos_frame_ppal <- llamado_desde('c_a')
 
-  if (!es_llave) {
+  if (!llamado_desde('llave')) {
     flias <- get('flias', envir = sys.frame(pos_frame_ppal))
     flias <- c(flias, familia) %>% unique
     # NOTA: Side-effect: estoy modificando la list 'flias'
     assign('flias', flias, envir = sys.frame(pos_frame_ppal))
-  }
-  
+  } 
+
   if (llamado_desde('llave') || es_llave) {
     datos_uno <- dtb[.(ticker_, serie), nomatch = 0] %>% 
       arrange(desc(date)) %>% select(value)
