@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+alarmas_varX.R
+AlarmasDataBBGX.R
+AlarmasDataContableX.R
+id_alarmas_file.txt
+salida_Antoine.csv
+salida_Antoine_jira.csv
+params_var.xlsx

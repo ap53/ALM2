@@ -33,7 +33,7 @@ transformar_expresion <- function(x, res, nivel_arbol = 1, nivel_llave = 0) {
   
   #  NOTA: la función devuelve un call transformado. En si misma no tiene 
   #  side-effects, pero la expresion transformada llama a calc_termino() que sí
-  #  los tiene y modifica 2 items de la lista 'res': res$flias y res$variables
+  #  los tiene y modifica 2 items de la lista 'res': alarm_env$res$flias y alarm_env$res$variables
   
   tmp_class_x <- class(x)
   empieza_llave <- FALSE
@@ -49,8 +49,8 @@ transformar_expresion <- function(x, res, nivel_arbol = 1, nivel_llave = 0) {
     var <- get(x_name, envir = sys.frame(pos_frame_ppal))
     
     if (is_atomic(var)) {
-      if (!x_name %in% names(res$variables)) {
-        variables <- get('variables', envir = sys.frame(pos_frame_ppal))
+      variables <- get('variables', envir = sys.frame(pos_frame_ppal))
+      if (!x_name %in% names(variables)) {
         variables <- c(variables, var)
         names(variables)[length(variables)] <- x_name
         # NOTA: Side-effect: estoy modificando la list 'variables' en c_a
@@ -96,7 +96,7 @@ transformar_expresion <- function(x, res, nivel_arbol = 1, nivel_llave = 0) {
       x <- reemplazar_expr_termino(x, term, sign(nivel_llave))   
     } 
     
-    hijos <- lapply(as.list(x), transformar_expresion, res, nivel_arbol = nivel_arbol + 1, nivel_llave)
+    hijos <- lapply(as.list(x), transformar_expresion, nivel_arbol = nivel_arbol + 1, nivel_llave)
     
     #  Si estoy saliendo de una llave, acomodo los flags
     if (empieza_llave) {
