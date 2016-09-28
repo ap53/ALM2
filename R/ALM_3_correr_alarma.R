@@ -18,12 +18,12 @@ c_a <- function(alarma,
   
   # Inicializar el proceso
   Ix_base <- calc_Ix_base()
-  res <- list(tipo = tipo, fecha_base = fecha_base, Ix_base = Ix_base, 
-              importancia_potencial = importancia, importancia = NA,
-              mensaje_corto = mensaje_corto, 
-              mensaje = str_replace_all(mensaje, '\n +', '\n'), 
-              flias = list(), variables = list(), paso_crossover = paso_crossover )
-
+  alarm_env$res <- list(tipo = tipo, fecha_base = fecha_base, Ix_base = Ix_base, 
+                        importancia_potencial = importancia, importancia = NA,
+                        mensaje_corto = mensaje_corto, 
+                        mensaje = str_replace_all(mensaje, '\n +', '\n'), 
+                        flias = list(), variables = list(), paso_crossover = paso_crossover )
+  
   # flias y variables guardan datos que se van descubriendo a lo largo de la 
   # transformación de la expresión de la alarma y que se usan después al armar 
   # los informes a JIRA.
@@ -35,16 +35,18 @@ c_a <- function(alarma,
   
   # res se modifica como side-effect del llamado a procesar_alarma() o test_expresion_simple()
   if (!prueba_expr) {
-    res <- procesar_alarma(alarma, res)
+    # res <- 
+    procesar_alarma(alarma)
   } else {
-    res <- test_expresion_simple(alarma, res)
+    # res <- 
+    test_expresion_simple(alarma)
   }
   
-  res$flias <- unname(flias)
+  alarm_env$res$flias <- unname(flias)
   browser()
-  res$variables <- variables
+  alarm_env$res$variables <- variables
   
-  if (prueba_expr) return(res)
+  # if (prueba_expr) return(res)
   
   informar_resultados(res) #, importancia, paso_crossover, permanente
   return(invisible(res))
@@ -61,9 +63,9 @@ procesar_alarma <- function(alarma, res) {     # , importancia,
       procesar_alarma_body(alarma, res)
     },
     error=function(cond) {
-      res$eval <<- "ERROR AL CORRER LA ALARMA"
-      res$alarma <<- NA
-      res$mensaje <<- cond
+      alarm_env$res$eval <<- "ERROR AL CORRER LA ALARMA"
+      alarm_env$res$alarma <<- NA
+      alarm_env$res$mensaje <<- cond
       return(res)
     })
     
@@ -71,12 +73,12 @@ procesar_alarma <- function(alarma, res) {     # , importancia,
   return(res)
 }
 
-procesar_alarma_body <- function(alarma, res) {    # , importancia, 
+procesar_alarma_body <- function(alarma) {    # , importancia, 
                                                    # mensaje_corto, mensaje, paso_crossover
   ### procesar_alarma_body
   expr <- expr_find(alarma)
-  res$expr <- expr_text(alarma)
-  res$expr_txt <- para_imprimir(alarma, nivel = 0)
+  alarm_env$res$expr <- expr_text(alarma)
+  alarm_env$res$expr_txt <- para_imprimir(alarma, nivel = 0)
   
   # OJO: si corre una alarma con el formato de la versión 0.1 original, 
   # el parámetro flia1 queda mapeado a paso_crossover...
@@ -96,36 +98,35 @@ procesar_alarma_body <- function(alarma, res) {    # , importancia,
     # Para cada rama voy guardando: el texto (en el que luego voy a reemplazar
     # el valor de las variables si es que las hay), la expresión transformada y
     # el valor resultante de su evaluación.
-    res$izq_text <- para_imprimir(alarma, nivel = 2)
-    res$izq_modif <- transformar_expresion(expr[[2]], res)
+    alarm_env$res$izq_text <- para_imprimir(alarma, nivel = 2)
+    alarm_env$res$izq_modif <- transformar_expresion(expr[[2]])
     # A veces el valor viene con un name, que me complica la vida: mejor lo elimino de entrada
-    res$izq_valor <- eval(res$izq_modif) %>% unname
-    res$valor_ult <- res$izq_valor
+    alarm_env$res$izq_valor <- eval(alarm_env$res$izq_modif) %>% unname
+    alarm_env$res$valor_ult <- alarm_env$res$izq_valor
     
-    res$der_text <- para_imprimir(alarma, nivel = 3)
-    res$der_modif <- transformar_expresion(expr[[3]], res)
-    res$der_valor <- eval(res$der_modif) %>% unname
-    res$valor_ult <- res$izq_valor
+    alarm_env$res$der_text <- para_imprimir(alarma, nivel = 3)
+    alarm_env$res$der_modif <- transformar_expresion(expr[[3]])
+    alarm_env$res$der_valor <- eval(res$der_modif) %>% unname
+    alarm_env$res$valor_ult <- alarm_env$res$izq_valor
     
     # Ya evaluadas ambas ramas, puedo evaluar la alarma completa
-    res$alarma <- do.call(as.character(res$operador), list(res$izq_valor, res$der_valor))
-    res$valor_ult <- res$alarma
-    res$importancia <- sign(res$alarma) * res$importancia_potencial
+    alarm_env$res$alarma <- do.call(as.character(alarm_env$res$operador), list(alarm_env$res$izq_valor, alarm_env$res$der_valor))
+    alarm_env$res$valor_ult <- alarm_env$res$alarma
+    ralarm_env$reses$importancia <- sign(alarm_env$res$alarma) * alarm_env$res$importancia_potencial
     if (res$alarma) {
-      # res$mensaje_corto <- mensaje_corto
-      res$mensaje <- str_replace_all(res$mensaje, '\n +', '\n')
+      alarm_env$res$mensaje <- str_replace_all(alarm_env$res$mensaje, '\n +', '\n')
     } else {
-      res$mensaje_corto <- iconv('No se disparó' , from = "", to = "UTF-8")
-      res$mensaje <- ''
+      alarm_env$res$mensaje_corto <- iconv('No se disparó' , from = "", to = "UTF-8")
+      alarm_env$res$mensaje <- ''
     }
     
-    res <- redondear_dif(res)
-    res$eval <- paste(res$izq_valor, res$operador, res$der_valor)
+    alarm_env$res <- redondear_dif(alarm_env$res)
+    alarm_env$res$eval <- paste(alarm_env$res$izq_valor, alarm_env$res$operador, alarm_env$res$der_valor)
   } else {
     stop('Alarma inválida', call. = FALSE)
   }
   
-  return(res)
+  return(alarm_env$res)
 }
 
 
@@ -299,26 +300,26 @@ informar_resultados <- function(res) { #, importancia, paso_crossover, permanent
   ### informar_resultados
   
   # Retoque de campos para JIRA (emprolijar)
-  if (is.na(res$alarma)) {
-    res$alarma <- TRUE
-    if (is.null(res$es_pnl) || is.na(res$es_pnl)) {
-      res$importancia <- res$importancia_potencial
+  if (is.na(alarm_env$res$alarma)) {
+    alarm_env$res$alarma <- TRUE
+    if (is.null(alarm_env$res$es_pnl) || is.na(alarm_env$res$es_pnl)) {
+      alarm_env$res$importancia <- alarm_env$res$importancia_potencial
     } else {
       # On 'lack of data' errors, pnl is serious, other cases not so serious...
-      res$importancia_potencial <- ifelse(res$es_pnl, -5, -1)
+      alarm_env$res$importancia_potencial <- ifelse(alarm_env$res$es_pnl, -5, -1)
       # Remove res$es_pnl so it doesn't break preparar_salida later on
-      res$es_pnl <- NULL
+      realarm_env$res$es_pnl <- NULL
     }
     
-    res$mensaje_corto <- 'ERROR AL CORRER LA ALARMA'
-    if (is.null(res$mensaje)) res$mensaje <- 'ERROR AL CORRER LA ALARMA'
+    alarm_env$res$mensaje_corto <- 'ERROR AL CORRER LA ALARMA'
+    if (is.null(alarm_env$res$mensaje)) alarm_env$res$mensaje <- 'ERROR AL CORRER LA ALARMA'
   } else {
   }
   
   # res <- eliminar_expresiones(res)      
   
   if (res$paso_crossover == 0) { # correr_alarma fue llamada directamente
-    salida_pantalla <- preparar_salida(res, archivo_salida, silencioso = FALSE)
+    salida_pantalla <- preparar_salida(alarm_env$res, archivo_salida, silencioso = FALSE)
     cat(salida_pantalla, '\n\n')
   } else { # correr_alarma fue llamada a través de crossover
     return(res)
@@ -335,37 +336,37 @@ preparar_salida <- function(res, archivo = NULL, silencioso = FALSE) {
   
   alarm_env$contar_alarma(res$importancia)
   
-  res$id_alarma <- alarm_env$get_next_alarm_id()
-  res$mensaje <- str_replace(res$mensaje, 'Error: Falta', 'Falta')
+  alarm_env$res$id_alarma <- alarm_env$get_next_alarm_id()
+  alarm_env$res$mensaje <- str_replace(alarm_env$res$mensaje, 'Error: Falta', 'Falta')
   
   # In corrida_alarmas we can save last id used at the end, in all other cases save it here.
   if(any(str_detect(sapply(sys.calls(), function(x) as.character(x)[1]), 'corrida_alarmas'))) {
     cat(res$id_alarma, file="id_alarmas_file.txt", sep = "\n")
   }
   
-  if (is.null(res$X)) res$X <- -99
+  if (is.null(alarm_env$res$X)) alarm_env$res$X <- -99
   
-  res$flias <- paste(res$flias, collapse = '|')
-  nombres_variables <- as_data_frame(res$variables)
+  alarm_env$res$flias <- paste(alarm_env$res$flias, collapse = '|')
+  nombres_variables <- as_data_frame(alarm_env$res$variables)
   nombres_variables <- gather(nombres_variables, x_name, x_value)
   
   if (nrow(nombres_variables) > 0) {
     for (i in seq.int(1, nrow(nombres_variables))) {
-      res$expr_txt <- str_replace_all(res$expr_txt, 
+      alarm_env$res$expr_txt <- str_replace_all(alarm_env$res$expr_txt, 
                                       nombres_variables$x_name[i],
                                       nombres_variables$x_value[i])
-      res$izq_text <- str_replace_all(res$izq_text, 
+      alarm_env$res$izq_text <- str_replace_all(alarm_env$res$izq_text, 
                                       nombres_variables$x_name[i],
                                       nombres_variables$x_value[i])
-      res$der_text <- str_replace_all(res$der_text, 
+      alarm_env$res$der_text <- str_replace_all(alarm_env$res$der_text, 
                                       nombres_variables$x_name[i],
                                       nombres_variables$x_value[i])
     }
   }
-  # res$variables no debe ser una lista, para el as.data.frame que sigue
-  res$variables <- paste(res$variables, collapse = '|')
+  # alarm_env$res$variables no debe ser una lista, para el as.data.frame que sigue
+  alarm_env$res$variables <- paste(alarm_env$res$variables, collapse = '|')
   
-  res <- eliminar_expresiones(res)
+  alarm_env$res <- eliminar_expresiones(alarm_env$res)
   s0 <- as.data.frame(res, stringsAsFactors = FALSE) %>% 
     mutate(fecha_corrida = Sys.Date())
   
@@ -434,22 +435,17 @@ preparar_salida <- function(res, archivo = NULL, silencioso = FALSE) {
   } else {
     # Don't show fecha_base if it is the same as 'last_day'
     if (res$fecha_base == alarm_env$max_fecha_datos)
-      res$fecha_base <- NULL
+      alarm_env$res$fecha_base <- NULL
     else
-      res$fecha_base <- paste('fecha_base =', format(fecha_base, "%d/%m/%Y"))
+      alarm_env$res$fecha_base <- paste('fecha_base =', format(fecha_base, "%d/%m/%Y"))
     
-    # if (res$misma_formula)
-    #   res$eval <- NULL
-    # 
-    # res$misma_formula <- NULL
-    
-    res$mensaje <- str_replace_all(res$mensaje, '\n*$', '')
+    alarm_env$res$mensaje <- str_replace_all(alarm_env$res$mensaje, '\n*$', '')
     
     # ToDo: por ahora simulo salida de la primer versión, generar mejores salidas
-    res1 <- list(expr = res$expr_txt, res$fecha_base, res$flias, 
-                 res$eval, # res$result_parciales,
-                 res$alarma, res$importancia, res$tipo, res$mensaje_corto, res$mensaje, 
-                 res$id_alarma, res$X)
+    res1 <- list(expr = alarm_env$res$expr_txt, alarm_env$res$fecha_base, alarm_env$res$flias, 
+                 alarm_env$res$eval, # res$result_parciales,
+                 alarm_env$res$alarma, alarm_env$res$importancia, alarm_env$res$tipo, alarm_env$res$mensaje_corto, alarm_env$res$mensaje, 
+                 alarm_env$res$id_alarma, res$X)
     if (is.null(res1[[2]])) res1[2] <- NULL
     
     salida <- paste(res1, collapse = "\n")
@@ -526,24 +522,24 @@ para_imprimir <- function(x, nivel = 0) {
 
 #### test_expresion_simple ------------------------------------------------------------------
 # Sólo se usa para testear transformar_expresion()
-test_expresion_simple <- function(alarma, res) {
+test_expresion_simple <- function(alarma) {
   ### test_expresion_simple  Sólo para debugging de expresiones
   expr <- expr_find(alarma)
   
-  expr_procesada <- transformar_expresion(expr, res)
+  expr_procesada <- transformar_expresion(expr)
   
   if (dbg()) print(as.character(expr_procesada))
 
   valor_ult <- eval(expr_procesada) %>% unname
 
-  res <- get('res', parent.frame())
+  #res <- get('res', parent.frame())
   # NOTA: Side-effect: estoy modificando la list 'res'
   
-  res$valor_ult <- valor_ult
-  assign('res', res, parent.frame())
+  alarm_env$res$valor_ult <- valor_ult
+  #assign('res', res, parent.frame())
 
-  if (dbg()) print(paste('valor = ', res$valor_ult))
-  res
+  if (dbg()) print(paste('valor = ', alarm_env$res$valor_ult))
+  return(invisible(NULL))
 }
 
 eliminar_expresiones <- function(res) {
