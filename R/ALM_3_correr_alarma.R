@@ -338,6 +338,7 @@ preparar_salida <- function(lista_res, archivo = NULL, silencioso = FALSE) {
   
   lista_res$id_alarma <- alarm_env$get_next_alarm_id()
   lista_res$mensaje <- str_replace(lista_res$mensaje, 'Error: Falta', 'Falta')
+  lista_res$mensaje <- str_replace_all(lista_res$mensaje, '[\r\n]*$', '')
   
   # In corrida_alarmas we can save last id used at the end, in all other cases save it here.
   if(any(str_detect(sapply(sys.calls(), function(x) as.character(x)[1]), 'corrida_alarmas'))) {
@@ -439,7 +440,6 @@ preparar_salida <- function(lista_res, archivo = NULL, silencioso = FALSE) {
     else
       lista_res$fecha_base <- paste('fecha_base =', format(fecha_base, "%d/%m/%Y"))
     
-    lista_res$mensaje <- str_replace_all(lista_res$mensaje, '\n*$', '')
     
     # ToDo: por ahora simulo salida de la primer versión, generar mejores salidas
     res1 <- list(expr = lista_res$expr_txt, lista_res$fecha_base, lista_res$flias, 
