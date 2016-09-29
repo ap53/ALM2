@@ -2,7 +2,7 @@
 # Versión 0.2
 
 # Parametros generales
-path <- "..\\data2\\"
+path <- "..\\data\\"
 archivo_salida <- "salida_Antoine.csv"
 
 source('./R/ALM_0_Funciones.R', encoding = 'UTF-8')
