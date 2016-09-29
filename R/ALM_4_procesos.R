@@ -21,7 +21,7 @@ x_over <- function(..., permanente = 0) {
   } else if (chk_hoy$alarma & !chk_ayer$alarma){
     # No se disparó ayer pero hoy sí: se prendió la alarma, hay crossover (+1)
     if (!hay_error) chk_hoy$mensaje_corto <- paste0('Se prendió la alarma: "', chk_hoy$mensaje_corto, '"')
-    chk_hoy$result_parciales <- paste(chk_ayer$result_parciales, '|', chk_hoy$result_parciales)
+    chk_hoy$eval <- paste(chk_ayer$eval, '|', chk_hoy$eval)
     chk_hoy$X <- 1 # Flag que significa: se prendió la alarma  (mando el +1 aunque haya error)
     
   } else if (!chk_hoy$alarma & chk_ayer$alarma){
@@ -34,7 +34,7 @@ x_over <- function(..., permanente = 0) {
       chk_hoy$mensaje <- paste0('Se apagó la alarma: "', chk_ayer$mensaje, '"')
       chk_hoy$X <- -1 # Flag que significa: se apagó la alarma
     }
-    chk_hoy$result_parciales <- paste(chk_ayer$result_parciales, '|', chk_hoy$result_parciales)
+    chk_hoy$eval <- paste(chk_ayer$eval, '|', chk_hoy$eval)
     
   } else if ( chk_hoy$alarma &  chk_ayer$alarma){
     # Se disparó ambas veces: no hay crossover, pero si piden 'permanente' lo informo igual

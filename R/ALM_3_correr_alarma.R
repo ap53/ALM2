@@ -133,6 +133,7 @@ calc_termino <- function(serie, duracion = 0, start = NULL, familia, post_proces
                          p = NULL, ND = -1, ver_serie = FALSE,
                          es_llave = FALSE) {
   ### calc_termino
+  # ToDo: es_llave no parece tener más sentido en esta versión, verificar y sacar
   
   ticker_ <- familia
   pos_frame_ppal <- llamado_desde('c_a')
