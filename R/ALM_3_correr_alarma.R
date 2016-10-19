@@ -332,7 +332,7 @@ preparar_salida <- function(lista_res, archivo = NULL, silencioso = FALSE) {
   
   dic_alarmas <- 
     data_frame(importancia = 0L:5L, 
-               Prioridad = c('Trivial', 'Trivial', 'Menor', 'Mayor', 'Crítica', 'Bloqueadora'))
+               Prioridad = c('Lowest', 'Lowest', 'Low', 'Medium', 'High', 'Highest'))
   
   alarm_env$contar_alarma(lista_res$importancia)
   
@@ -386,12 +386,21 @@ preparar_salida <- function(lista_res, archivo = NULL, silencioso = FALSE) {
                       alarma, importancia, nombre, resumen, 
                       mensaje, id_alarma, X, fecha_corrida, Prioridad)
   
+  # s_jira <- s0 %>% mutate(proyecto = 'ALM', 
+  #                         fecha_corrida = format(fecha_corrida, '%d/%m/%Y'),
+  #                         fecha_alarma  = format(fecha_alarma,  '%d/%m/%Y')) %>% 
+  #   select(id_alarma, fecha_corrida, fecha_alarma, nombre, cartera_precio, 
+  #          resumen, importancia, Prioridad, 'Project Key' = proyecto, free_text = mensaje, 
+  #          'Software indicador de Señal' = eval, X)
+  
   s_jira <- s0 %>% mutate(proyecto = 'ALM', 
-                          fecha_corrida = format(fecha_corrida, '%d/%m/%Y'),
-                          fecha_alarma  = format(fecha_alarma,  '%d/%m/%Y')) %>% 
-    select(id_alarma, fecha_corrida, fecha_alarma, nombre, cartera_precio, 
-           resumen, importancia, Prioridad, 'Project Key' = proyecto, free_text = mensaje, 
-           'Software indicador de Señal' = eval, X)
+                          fecha_alarma  = format(fecha_alarma,  '%d/%m/%Y'),
+                          TipoIncidencia = case_when(s0$X == -1 | s0$X == 1 ~ 'New event',
+                                                     s0$X == 0 ~ 'Recurring Event',
+                                                     TRUE ~ 'Info')) %>% 
+    select(id_alarma, 'Fecha de entrega' = fecha_alarma, 'Etiquetas' = nombre, cartera_precio, 
+           Prioridad, 'Project Key' = proyecto, 'Resumen' = mensaje, 
+           'Descripción' = eval, 'Tipo de Incidencia' = TipoIncidencia)
   
   s_long <- s0 %>% gather(dato, valor, -c(id_alarma, fecha_alarma, fecha_corrida)) %>% 
     select(id_alarma, fecha_alarma, fecha_corrida, dato, valor) %>% 
