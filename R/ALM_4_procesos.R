@@ -120,3 +120,82 @@ corrida_alarmas <- function(filename, fecha_inicial = NULL, fecha_final = fecha_
   if (sum(alarm_env$cant_alarmas) <= 1) {verbo = 'Tardó: '} else {verbo = 'Tardaron: '}
   cat(verbo, (proc.time() - ptm)[3], ' segundos...\n')
 }
+
+#### Comparar archivos ----------------------------------------
+comparar_familias <- function(fech_fija, path_bkp, fecha_tope = as.Date('2012-01-01')) {
+  tipo_arch = 'familia'
+  
+  # Extraer lista de nombres de archivos del tipo deseado (tipo_arch, fecha_tope)
+  #   Ordenarlos por fecha *descendiente*
+  lista_arch <- list.files(path_bkp, pattern = tipo_arch)
+  
+  # Verificar que exista el de la fecha base solicitada
+  archivo_base <- paste0(format(fech_fija, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+  if (!(archivo_base %in% lista_arch))
+    stop('No existe', archivo_base, 'en la carpeta', path_bkp, sep = ' ')
+  
+  
+  # Eliminar de la lista las más recientes que esta fecha base
+  lista_arch <- lista_arch[which(ymd(str_sub(lista_arch, 1, 10)) < fech_fija & ymd(str_sub(lista_arch, 1, 10)) >= fecha_tope)] %>% 
+    sort(decreasing = TRUE)
+  
+  # Leer datos base
+  dt_base <- readRDS(paste0(path_bkp, archivo_base))
+  
+  # Son archivos grandes, data.table conviene
+  if (!inherits(dt_base, 'data.table')) dt_base <- as.data.table(dt_base )
+  
+  # Eliminar columnas innecesarias
+  dt_base <- dt_base[, list(Descripcion, CarteraNom)]
+  
+  # Comienzo acumulación
+  dta <- dt_base %>% mutate(Fecha = fech_fija, Existe = 'X')
+  
+  # Loop sobre los anteriores a la fecha base solicitada
+  for (arch in lista_arch) {
+    # Extraer fecha loop
+    fecha_loop <- str_sub(arch, 1, 10) %>% ymd()
+    print(fecha_loop)
+    
+    # Leer el target
+    dt_loop <- readRDS(paste0(path_bkp, arch))
+    if (dim(dt_loop)[2] == 0) {
+      print(paste0('Problemas con el archivo: ', path_bkp, arch))
+      next()
+    }
+    
+    if (!inherits(dt_loop, 'data.table')) dt_loop <- as.data.table(dt_loop )
+    
+    # Eliminar columnas innecesarias
+    dt_loop <- dt_loop[, list(Descripcion, CarteraNom)] %>% mutate(Fecha = fecha_loop, Existe = 'X')
+    
+    # Acumulo
+    dta <- rbindlist(list(dta, dt_loop), use.names=TRUE, fill=TRUE)
+    
+  }
+  
+  ult_fecha <- fecha_loop
+  
+  dta <- dta %>% rename(Familia = Descripcion, Cartera = CarteraNom)
+  # dta <- dta %>% filter(Fecha < '2016-09-15'| Fecha > '2016-09-20' | Familia != 'VIX' | Cartera != 'T-VIX')
+  
+  combinaciones <- dta %>% expand(nesting(Familia, Cartera), Fecha)
+  dta <- dta %>% right_join(combinaciones, by = c("Familia", "Cartera", "Fecha")) %>% 
+    arrange(Familia, Cartera, desc(Fecha)) %>% 
+    group_by(Familia, Cartera) %>% mutate(Previo = lead(Existe)) %>% ungroup
+  
+  
+  dta <- dta %>% filter(coalesce(Existe, '0') != coalesce(Previo, '0')) %>% 
+    arrange(Familia, Cartera, desc(Fecha)) %>%  group_by(Familia, Cartera)
+  
+  dta <- dta %>% mutate(FchPrevia = lead(Fecha), DespuesDe_Dias = Fecha - FchPrevia) %>% 
+    select(Familia, Cartera, Fecha, Existe, DespuesDe_Dias) %>% 
+    mutate(Existe = coalesce(Existe, ''), DespuesDe_Dias = coalesce(fech_fija - Fecha))
+  
+  # Informar diferencias
+  cant_sin_cambios <- dta %>% filter(Fecha == ult_fecha) %>% nrow()
+  print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dta) - cant_sin_cambios, 'diferencias encontradas.'))
+  write.csv(dta, file = paste(str_replace_all(today(), '-', ''), 'Cambios Familias.csv'), row.names = FALSE)
+  
+  return(dta)
+}

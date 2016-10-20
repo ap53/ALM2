@@ -18,3 +18,4 @@ corrida_alarmas('AlarmasDataContableX.R')
 corrida_alarmas('AlarmasDataBBGX.R')
 corrida_alarmas('alarmas_varX.R')
 
+dif_familias <- comparar_familias(fecha_base, paste0(path, 'Backup Data Contable/'))
