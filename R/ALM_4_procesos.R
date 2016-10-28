@@ -199,3 +199,255 @@ comparar_familias <- function(fech_fija, path_bkp, fecha_tope = as.Date('2012-01
   
   return(dta)
 }
+
+comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base, 
+                              fecha_tope = as.Date('2012-01-01'),
+                              excluir_primer_aparicion = TRUE, 
+                              tolerancia_dias = 0, # >0 se queda con DespuesDe_Dias > tol, < 0 se queda con los cercanos
+                              tolerancia_dif = 'baja', # cualquier otro string es 'alta'
+                              dbg = 0) {
+  # Para cada tipo_arch especifico:
+  # v_fecha: si hay alguna columna que sea "variable" (en un sentido "tidyr")
+  # y represente una "fecha de contrato". Un ejemplo es Fecha en pnl. 
+  # El PatFamilia de una "fecha de contrato" a la siguente puede variar, 
+  # pero para una "fecha de contrato" dada, debería ser constante de un 
+  # archivo al siguiente. Hay que aclarar cual es esta "fecha de contrato"
+  # para estar seguros de que R la vea como fecha y poder hacer cálculos
+  # de diferencias de fecha.
+  # v_variables: son las columnas "variables" (en el sentido "tidyr"), o sea
+  # las que forman la clave sobre la que vamos a buscar diferencias. Si hay 
+  # una 'v_fecha', debe formar parte de este vector de variables.
+  # v_observaciones: son aquellas columnas que vamos a pasar de wide a long.
+  # Por ejemplo, en pnl vamos a buscar por separado las diferencias de 
+  # 'PatFamilia' y las de 'RentDiaria' por lo las bajamos a una columna '.variable'.
+  
+  # Por ahora especifico todo en la función: creo que van a ser estos tres archivos
+  # nada más: si aparecen varios más, pasar esto a un archivo de configuración.
+  if (tipo_arch == 'familia') {
+    v_fecha <- ''
+    # OJO: más abajo las renombro "c('Familia', 'Cartera')"
+    v_variables <- c('Descripcion', 'CarteraNom')
+    v_observaciones <- c()
+  } else if (tipo_arch == 'pnl') {
+    v_fecha <- 'Fecha'
+    v_variables <- c('Fecha', 'NombreFamilia')
+    v_observaciones <- c('PatFamilia', 'RentDiaria', 'Suscripciones', 'Rescates')
+  } else if (tipo_arch == 'bulk') {
+    v_fecha <- 'Periodo' # OJO: más abajo lo cambio a 'Fecha'
+    v_variables <- c('Fecha', 'CarteraNom')
+    v_observaciones <- c('Cantidad', 'Valuacion', 'Resultado')
+  }
+  v_todas <- c(v_variables, v_observaciones)
+  
+  # Extraer lista de nombres de archivos del tipo deseado (tipo_arch, fecha_tope)
+  #   Ordenarlos por fecha *descendiente*
+  lista_arch <- list.files(path_bkp, pattern = tipo_arch) %>% sort(decreasing = TRUE)
+  
+  # Verificar que exista el de la fecha base solicitada
+  archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+  if (!(archivo_base %in% lista_arch)){
+    fecha_inic <- str_sub(lista_arch[1], 1, 10) %>% ymd()
+    archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+    
+    print(paste('OJO: No existe', archivo_base, 'en la carpeta', path_bkp, ' ==> fecha_inic = ', format(fecha_inic, '%Y-%m-%d')))
+  }
+  
+  # La cantidad de días que han pasado entre la "fecha de contrato" y el día en que
+  # se detecta la diferencia tiene más sentido si se expresa en días de semana: es
+  # lo mismo una diferencia entre martes y jueves que una entre jueves y lunes.
+  # Preparo un Calendario para contar dias de semana(o sea los laborables)
+  calendario_dias_semana <- data.table(fecha = fecha_inic - seq(0, as.numeric(fecha_inic - fecha_tope + 1)) )
+  calendario_dias_semana <- calendario_dias_semana[, dia_semana := wday(fecha)][dia_semana %in% 2:6]
+  setkey(calendario_dias_semana, fecha)
+  calendario_dias_semana <- calendario_dias_semana[, ix := seq_len(.N)]
+  
+  # Eliminar de la lista las más recientes (o igual) que la fecha fija  
+  lista_arch <- lista_arch[which(ymd(str_sub(lista_arch, 1, 10)) < fecha_inic & 
+                                   ymd(str_sub(lista_arch, 1, 10)) >= fecha_tope)] %>% 
+    sort(decreasing = TRUE)
+  
+  dt_base <- readRDS(paste0(path_bkp, archivo_base))
+  # Son archivos grandes, data.table es más conveniente que dplyr
+  if (!inherits(dt_base, 'data.table')) dt_base <- as.data.table(dt_base )
+  
+  # Si hay una v_fecha, me aseguro de que se llame 'Fecha' para no
+  # complicarme la vida cuando haga las comparaciones
+  if (v_fecha != '' && v_fecha != 'Fecha') {
+    dt_base <- dt_base %>% rename_('Fecha' = v_fecha)
+  }
+  
+  # Me aseguro de que tenga tipo Date
+  if (v_fecha != '' && 'Fecha' %in% names(dt_base)) {
+    if (class(dt_base[['Fecha']]) == 'character') {
+      dt_base[['Fecha']] <- 
+        ymd(str_sub(dt_base[['Fecha']], 1, str_locate(dt_base[['Fecha']], ' ')[1] - 1))
+    }
+    
+    dt_base <- dt_base[Fecha >= fecha_tope]
+  }
+  
+  if (dbg >= 2) browser()
+  # Eliminar columnas innecesarias (me quedo con las v_variables y con las v_observaciones)
+  # El resto vuela.
+  dt_base <- data.table(as.data.frame(dt_base)[, get('v_todas')]) #[order(-Fecha)]
+  
+  
+  # Comienzo acumulación
+  dta <- dt_base %>% mutate(Fecha_arch = fecha_inic, Existe = 'X')
+  
+  # Loop sobre los archivos anteriores a la fecha base fija
+  for (arch in lista_arch) {
+    # Extraer fecha loop
+    fecha_loop <- str_sub(arch, 1, 10) %>% ymd()
+    print(fecha_loop)
+    
+    # Leer el target
+    dt_loop <- readRDS(paste0(path_bkp, arch))
+    if (dim(dt_loop)[2] == 0) {
+      print(paste0('Problemas con el archivo: ', path_bkp, arch))
+      next()
+    }
+    
+    if (v_fecha != '' && v_fecha != 'Fecha') {
+      dt_loop <- dt_loop %>% rename_('Fecha' = v_fecha)
+    }
+    
+    if (v_fecha != '' && 'Fecha' %in% names(dt_loop)) {
+      if (class(dt_loop[['Fecha']]) == 'character') {
+        dt_loop[['Fecha']] <- 
+          ymd(str_sub(dt_loop[['Fecha']], 1, str_locate(dt_loop[['Fecha']], ' ')[1] - 1))
+      }
+      dt_loop <- dt_loop[Fecha >= fecha_tope]
+    }
+    
+    if (!inherits(dt_loop, 'data.table')) dt_loop <- as.data.table(dt_loop )
+    
+    # Eliminar columnas innecesarias
+    dt_loop <- data.table(as.data.frame(dt_loop)[, get('v_todas')]) %>% 
+      mutate(Fecha_arch = fecha_loop, Existe = 'X')
+    
+    # Acumulo
+    if (dbg >= 3) browser()
+    dta <- rbindlist(list(dta, dt_loop), use.names=TRUE, fill=TRUE)
+    
+  }
+  
+  ult_fecha <- fecha_loop
+  
+  if (dbg >= 2) browser()
+  if (tipo_arch == 'familia') { # Por ahora es el caso de 'familia'
+    dtb <- dta %>% rename(.Variable = Existe) %>% mutate(.Valor = 1) %>% 
+      rename(Familia = Descripcion, Cartera = CarteraNom) 
+    
+    v_variables <- c('Familia', 'Cartera')
+    v_todas <- c(v_variables, v_observaciones)
+    
+    combinaciones <- dtb %>% expand(nesting(Familia, Cartera, .Variable), Fecha_arch)
+  } else if (tipo_arch == 'pnl') {
+    dta <- dta[!(is.na(Fecha) | is.na(NombreFamilia))] %>% filter(Fecha >= fecha_tope)
+    
+    dtb <- dta %>% select(-Existe) %>% 
+      gather_('.Variable', '.Valor', v_observaciones, convert = TRUE)
+    
+    combinaciones <- dtb %>% expand(nesting(Fecha, NombreFamilia, .Variable ), Fecha_arch)
+  } else if (tipo_arch == 'bulk') {
+    dta <- dta[!(is.na(Fecha) | is.na(CarteraNom))] %>% filter(Fecha >= fecha_tope)
+    
+    dtb <- dta %>% select(-Existe) %>% 
+      gather_('.Variable', '.Valor', v_observaciones, convert = TRUE)
+    
+    combinaciones <- dtb %>% expand(nesting(Fecha, CarteraNom, .Variable ), Fecha_arch)
+  }
+  
+  vector_of_vars <- c(v_variables, '.Variable')
+  vector_of_vars_arrange <- c(vector_of_vars, 'desc(Fecha_arch)')
+  dtc <- dtb %>% right_join(combinaciones) %>%  
+    arrange_(.dots = vector_of_vars_arrange) %>% 
+    group_by_(vector_of_vars)
+  
+  dtc <- dtc %>% mutate(Previo = lead(.Valor)) %>% ungroup
+  if (v_fecha != '') {
+    dtc <- dtc %>% filter(Fecha_arch > Fecha)
+  }
+  
+  dtd <- dtc %>% 
+    filter(dif_significativa(coalesce(.Valor, -987987654.321), 
+                             coalesce(Previo, -987987654.321),
+                             tolerancia_dif))
+  
+  dtd <- dtd %>% arrange_(.dots = vector_of_vars_arrange) %>% 
+    ungroup %>% group_by_(v_variables)  # , .Variable
+  
+  if (excluir_primer_aparicion) {
+    dtd <- dtd %>% filter(Fecha_arch != ult_fecha)
+    
+    if (v_fecha != '') {
+      primer_fecha <- (dtd %>% summarise(min(Fecha)))[[1]][1]
+      dtd <- dtd %>% filter(Fecha != primer_fecha)
+    }
+  }
+  
+  if (v_fecha == '') {
+    dth <- dtd %>% mutate('FchPrevia' = lead(Fecha_arch), DespuesDe_Dias = Fecha_arch - FchPrevia)
+  } else { 
+    dtg <- dtd %>% mutate(DespuesDe_Dias =
+                            calendario_dias_semana[.(Fecha_arch), ix] -
+                            calendario_dias_semana[.(Fecha), ix])
+    
+    # Algunos archivos se generan un sábado y dan NA porque no existen en
+    # calendario: para este cálculo asumo que se generaron el viernes
+    dth <- dtg %>% 
+      mutate(DespuesDe_Dias = ifelse(is.na(DespuesDe_Dias),
+                                     calendario_dias_semana[.(Fecha_arch - 1), ix] -
+                                       calendario_dias_semana[.(Fecha), ix],
+                                     DespuesDe_Dias)
+      )
+  }
+  
+  if (tolerancia_dias != 0) {
+    if (tolerancia_dias > 0) {
+      dth <- dth %>% filter(DespuesDe_Dias > tolerancia_dias)
+    } else {
+      dth <- dth %>% filter(DespuesDe_Dias <= -tolerancia_dias)
+    }
+  }
+  
+  v1 <- c(v_variables, '.Variable', '.Valor', 'Previo', 'Fecha_arch', 'DespuesDe_Dias')
+  dti <- dth %>% 
+    select_(.dots = v1) %>% 
+    arrange_(vector_of_vars_arrange)
+  
+  if (dbg >= 2) browser()
+  # pisp(dti, 'ALFA', 'RentDiaria')
+  
+  # Informar diferencias
+  cant_sin_cambios <- dti %>% filter(Fecha_arch == ult_fecha) %>% nrow()
+  print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dti) - cant_sin_cambios, 'diferencias encontradas.'))
+  write.csv(dti, file = paste(str_replace_all(today(), '-', ''), paste0('Cambios ', tipo_arch, '.csv')), row.names = FALSE)
+  return(dti)
+}
+
+dif_significativa <- function(a, b, tolerancia_dif) {
+  mayor <- pmax(abs(a), abs(b))
+  
+  if (tolerancia_dif == 'baja') {
+    limite <- case_when(
+      mayor > 10000 ~ 1,
+      mayor >   100 ~ 0.1,
+      mayor >    10 ~ 0.01,
+      TRUE          ~ 0.0001
+    )
+  } else {
+    limite <- case_when(
+      mayor > 1000000 ~ 10000,
+      mayor >  100000 ~  1000,
+      mayor >   10000 ~   100,
+      mayor >     100 ~    10,
+      mayor >      10 ~     1,
+      TRUE            ~     0.1
+    )
+  }
+  
+  abs(a - b) > limite
+}
+
