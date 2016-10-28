@@ -234,7 +234,7 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     v_observaciones <- c('PatFamilia', 'RentDiaria', 'Suscripciones', 'Rescates')
   } else if (tipo_arch == 'bulk') {
     v_fecha <- 'Periodo' # OJO: más abajo lo cambio a 'Fecha'
-    v_variables <- c('Fecha', 'CarteraNom')
+    v_variables <- c('Fecha', 'CarteraNom', 'Especie')
     v_observaciones <- c('Cantidad', 'Valuacion', 'Resultado')
   }
   v_todas <- c(v_variables, v_observaciones)
