@@ -424,7 +424,7 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
   cant_sin_cambios <- dti %>% filter(Fecha_arch == ult_fecha) %>% nrow()
   print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dti) - cant_sin_cambios, 'diferencias encontradas.'))
   write.csv(dti, file = paste(str_replace_all(today(), '-', ''), paste0('Cambios ', tipo_arch, '.csv')), row.names = FALSE)
-  return(dti)
+  return(invisible(NULL))
 }
 
 dif_significativa <- function(a, b, tolerancia_dif) {
