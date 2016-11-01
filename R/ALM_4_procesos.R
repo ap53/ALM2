@@ -470,7 +470,7 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
       dif_key <- bind_rows(
         vars_fch1 %>% anti_join(vars_fch2),
         vars_fch2 %>% anti_join(vars_fch1),
-        .id = 'Fecha_arch'
+        .id = 'Archivo'
       )
     if (nrow(dif_key) > 0) {
       write.csv(dif_key, file = paste(str_replace_all(today(), '-', ''), paste0('Diferencias claves ', tipo_arch, '.csv')), row.names = FALSE)
