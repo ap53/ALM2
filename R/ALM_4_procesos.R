@@ -202,6 +202,7 @@ comparar_familias <- function(fech_fija, path_bkp, fecha_tope = as.Date('2012-01
 
 comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base, 
                               fecha_tope = as.Date('2012-01-01'),
+                              lista_fechas = NULL,   # c(ymd(20161005), ymd(20160915))
                               excluir_primer_aparicion = TRUE, 
                               tolerancia_dias = 0, # >0 se queda con DespuesDe_Dias > tol, < 0 se queda con los cercanos
                               tolerancia_dif = 'baja', # cualquier otro string es 'alta'
@@ -239,18 +240,33 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
   }
   v_todas <- c(v_variables, v_observaciones)
   
-  # Extraer lista de nombres de archivos del tipo deseado (tipo_arch, fecha_tope)
-  #   Ordenarlos por fecha *descendiente*
-  lista_arch <- list.files(path_bkp, pattern = tipo_arch) %>% sort(decreasing = TRUE)
-  
-  # Verificar que exista el de la fecha base solicitada
-  archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
-  if (!(archivo_base %in% lista_arch)){
-    fecha_inic <- str_sub(lista_arch[1], 1, 10) %>% ymd()
-    archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+      # Extraer lista de nombres de archivos del tipo deseado (tipo_arch, fecha_tope)
+    #   Ordenarlos por fecha *descendiente*
+    lista_arch <- list.files(path_bkp, pattern = tipo_arch) %>% sort(decreasing = TRUE)
     
-    print(paste('OJO: No existe', archivo_base, 'en la carpeta', path_bkp, ' ==> fecha_inic = ', format(fecha_inic, '%Y-%m-%d')))
-  }
+    if (!is.null(lista_fechas)) {
+      if (class(lista_fechas) != 'Date') {
+        stop('Las fechas que se pasan en lista_fechas deben ser un vector de "Dates".\n Ej: "c(ymd(20161005), ymd(20160915))"')
+      }
+      listados <- paste0(format(lista_fechas, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+      
+      lista_arch <- intersect(lista_arch, listados) %>% sort(decreasing = TRUE)
+      if (length(lista_arch) != length(listados)) {
+        stop('No se encontraron todos los archivos especificados en lista_fechas.')
+      }
+      archivo_base <- lista_arch[1]
+      fecha_inic <- ymd(str_sub(archivo_base, 1, 10))
+    } else {
+      
+      # Verificar que exista el de la fecha base solicitada
+      archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+      if (!(archivo_base %in% lista_arch)){
+        fecha_inic <- str_sub(lista_arch[1], 1, 10) %>% ymd()
+        archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
+        
+        print(paste('OJO: No existe', archivo_base, 'en la carpeta', path_bkp, ' ==> fecha_inic = ', format(fecha_inic, '%Y-%m-%d')))
+      }
+    }
   
   # La cantidad de días que han pasado entre la "fecha de contrato" y el día en que
   # se detecta la diferencia tiene más sentido si se expresa en días de semana: es
@@ -334,7 +350,7 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
   
   ult_fecha <- fecha_loop
   
-  if (dbg >= 2) browser()
+  if (dbg >= 2)  browser()
   if (tipo_arch == 'familia') { # Por ahora es el caso de 'familia'
     dtb <- dta %>% rename(.Variable = Existe) %>% mutate(.Valor = 1) %>% 
       rename(Familia = Descripcion, Cartera = CarteraNom) 
@@ -359,11 +375,20 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     combinaciones <- dtb %>% expand(nesting(Fecha, CarteraNom, .Variable ), Fecha_arch)
   }
   
+
   vector_of_vars <- c(v_variables, '.Variable')
+  # Convert character vector to list of symbols
+  dots <- lapply(vector_of_vars, as.symbol)
+  
   vector_of_vars_arrange <- c(vector_of_vars, 'desc(Fecha_arch)')
-  dtc <- dtb %>% right_join(combinaciones) %>%  
-    arrange_(.dots = vector_of_vars_arrange) %>% 
-    group_by_(vector_of_vars)
+
+  
+  # if (dbg >= 1) browser()
+  # combi_2 <- dtb %>% expand_(nesting_(dots), 'Fecha_arch')
+
+  dtc <- dtb %>% right_join(combinaciones) %>% 
+    group_by_(.dots = dots) %>%  
+    arrange_(.dots = vector_of_vars_arrange)
   
   dtc <- dtc %>% mutate(Previo = lead(.Valor)) %>% ungroup
   if (v_fecha != '') {
@@ -375,17 +400,10 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
                              coalesce(Previo, -987987654.321),
                              tolerancia_dif))
   
+  # Convert character vector to list of symbols
+  dots <- lapply(vector_of_vars, as.symbol)
   dtd <- dtd %>% arrange_(.dots = vector_of_vars_arrange) %>% 
-    ungroup %>% group_by_(v_variables)  # , .Variable
-  
-  if (excluir_primer_aparicion) {
-    dtd <- dtd %>% filter(Fecha_arch != ult_fecha)
-    
-    if (v_fecha != '') {
-      primer_fecha <- (dtd %>% summarise(min(Fecha)))[[1]][1]
-      dtd <- dtd %>% filter(Fecha != primer_fecha)
-    }
-  }
+    ungroup %>% group_by_(.dots = dots)  # , .Variable
   
   if (v_fecha == '') {
     dth <- dtd %>% mutate('FchPrevia' = lead(Fecha_arch), DespuesDe_Dias = Fecha_arch - FchPrevia)
@@ -402,6 +420,16 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
                                        calendario_dias_semana[.(Fecha), ix],
                                      DespuesDe_Dias)
       )
+  }
+  
+  if (excluir_primer_aparicion) {
+    if (dbg >= 1) browser()
+    dth <- dth %>% filter(Fecha_arch != ult_fecha)
+    
+    # if (v_fecha != '') {
+    #   primer_fecha <- (dth %>% summarise(min(Fecha)))[[1]][1]
+    #   dth <- dth %>% filter(Fecha != primer_fecha)
+    # }
   }
   
   if (tolerancia_dias != 0) {
@@ -421,9 +449,35 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
   # pisp(dti, 'ALFA', 'RentDiaria')
   
   # Informar diferencias
-  cant_sin_cambios <- dti %>% filter(Fecha_arch == ult_fecha) %>% nrow()
-  print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dti) - cant_sin_cambios, 'diferencias encontradas.'))
+  if (excluir_primer_aparicion) {
+    print(paste(nrow(dti), "diferencias encontradas (excluyendo casos de 'aparición' en la primer fecha)."))
+  } else {
+    cant_sin_cambios <- dti %>% filter(Fecha_arch == ult_fecha) %>% nrow()
+    print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dti) - cant_sin_cambios, 'diferencias encontradas.'))
+  }
   write.csv(dti, file = paste(str_replace_all(today(), '-', ''), paste0('Cambios ', tipo_arch, '.csv')), row.names = FALSE)
+
+  # Si pido comparar dos fechas, saco además una comparación de las v_variables excluyendo v_fecha
+  if (!is.null(lista_fechas) && length(lista_fechas) == 2) {
+    if (dbg >= 2) browser()
+    if (v_fecha != '') v_variables <- setdiff(v_variables, 'Fecha')
+    
+    vars_fch1 <- dtb %>% filter(Fecha_arch == lista_fechas[1]) %>% 
+      select_(.dots = c(v_variables)) %>% distinct_(.dots = c(v_variables))
+    vars_fch2 <- dtb %>% filter(Fecha_arch == lista_fechas[2]) %>% 
+      select_(.dots = c(v_variables)) %>% distinct_(.dots = c(v_variables))
+    
+      dif_key <- bind_rows(
+        vars_fch1 %>% anti_join(vars_fch2),
+        vars_fch2 %>% anti_join(vars_fch1),
+        .id = 'Fecha_arch'
+      )
+    if (nrow(dif_key) > 0) {
+      write.csv(dif_key, file = paste(str_replace_all(today(), '-', ''), paste0('Diferencias claves ', tipo_arch, '.csv')), row.names = FALSE)
+    } else {
+      print('No se encontraron diferencias en la composición de las variables clave entre ambos archivos.')
+    }
+  }
   return(invisible(NULL))
 }
 
