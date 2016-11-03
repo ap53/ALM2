@@ -505,3 +505,22 @@ dif_significativa <- function(a, b, tolerancia_dif) {
   abs(a - b) > limite
 }
 
+ultimos_archivos_diarios <- function(tipo_arch, url, file_type = 'RDS') {
+  filenames = RCurl::getURL(url, ftp.use.epsv = FALSE, ftplistonly = TRUE)
+  filenames = paste(url, strsplit(filenames, "\r\n")[[1]], sep = "")
+  files <- str_replace(filenames, url, '') %>% tbl_df %>% 
+    filter(str_detect(value, tipo_arch), str_detect(value, paste0('.', file_type, '$')), str_detect(value, '^20')) %>% 
+    mutate(fh_arch = ymd_hm(str_sub(value, 1, 16)),
+           f_arch = as_date(fh_arch),
+           h_arch = as.duration(interval(f_arch, fh_arch))) %>% 
+    filter(!is.na(h_arch))
+  
+  files %>% group_by(f_arch) %>% 
+    filter(as.duration(h_arch) == as.duration(max(h_arch))) %>% 
+    ungroup %>% select(archivo = value)
+}
+
+# tipo_arch <- 'familia'
+# url <- 'ftp://intranet:intranet.2013@192.168.2.95/'
+# 
+# ultimos_archivos_del_dia(tipo_arch, url)

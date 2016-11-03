@@ -12,6 +12,7 @@ librerias_base <- function(){
   suppressPackageStartupMessages(library(stringi))
   # suppressPackageStartupMessages(library(readr))
   suppressPackageStartupMessages(library(lazyeval))
+  suppressPackageStartupMessages(library(RCurl))
 }
 librerias_base()
 
