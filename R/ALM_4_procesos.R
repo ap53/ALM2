@@ -206,7 +206,38 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
                               excluir_primer_aparicion = TRUE, 
                               tolerancia_dias = 0, # >0 se queda con DespuesDe_Dias > tol, < 0 se queda con los cercanos
                               tolerancia_dif = 'baja', # cualquier otro string es 'alta'
+                              eliminar_arch_intermedios = TRUE,
                               dbg = 0) {
+  fh_inicio <- Sys.time()
+  fh_interm <- fh_inicio
+  primera_mostrada_tiempos <- TRUE
+  
+  mostrar_durac <- function(dur) {
+    unidades <- attr(dur, 'units')
+    if (unidades == 'secs'){
+      unidades <- 'segundos'
+    } else if (unidades == 'mins'){
+      unidades <- 'minutos'
+    } else if (unidades == 'hours'){
+      unidades <- 'horas'
+    } # else queda como está...
+    paste(round(dur, 1), unidades)
+  }
+  mostrar_tiempos <- function(txt) {
+    ahora <- Sys.time()
+    if (primera_mostrada_tiempos) {
+      cat('Inicio comparación de', arch, 'a las', format(Sys.time(), '%H:%M\n'))
+      primera_mostrada_tiempos <<- FALSE
+    } else {
+      cat(txt, 'a las', format(ahora, '%H:%M'), 'tardó:', mostrar_durac(ahora - fh_interm), 
+          ', acumulado: ', mostrar_durac(ahora - fh_inicio), '\n')
+    }
+    fh_interm <<- ahora
+  }
+  
+  mostrar_tiempos()
+  
+  if (dbg >= 1) browser()
   # Para cada tipo_arch especifico:
   # v_fecha: si hay alguna columna que sea "variable" (en un sentido "tidyr")
   # y represente una "fecha de contrato". Un ejemplo es Fecha en pnl. 
@@ -262,9 +293,9 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
       archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
       if (!(archivo_base %in% lista_arch)){
         fecha_inic <- str_sub(lista_arch[1], 1, 10) %>% ymd()
-        archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
-        
         print(paste('OJO: No existe', archivo_base, 'en la carpeta', path_bkp, ' ==> fecha_inic = ', format(fecha_inic, '%Y-%m-%d')))
+        
+        archivo_base <- paste0(format(fecha_inic, "%Y-%m-%d"), '.', tipo_arch, '.RDS')
       }
     }
   
@@ -349,8 +380,10 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
   }
   
   ult_fecha <- fecha_loop
+  mostrar_tiempos('Archivos leidos')
   
   if (dbg >= 2)  browser()
+  
   if (tipo_arch == 'familia') { # Por ahora es el caso de 'familia'
     dtb <- dta %>% rename(.Variable = Existe) %>% mutate(.Valor = 1) %>% 
       rename(Familia = Descripcion, Cartera = CarteraNom) 
@@ -375,7 +408,8 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     combinaciones <- dtb %>% expand(nesting(Fecha, CarteraNom, .Variable ), Fecha_arch)
   }
   
-
+  if (eliminar_arch_intermedios) rm(dta)
+  
   vector_of_vars <- c(v_variables, '.Variable')
   # Convert character vector to list of symbols
   dots <- lapply(vector_of_vars, as.symbol)
@@ -395,22 +429,50 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     dtc <- dtc %>% filter(Fecha_arch > Fecha)
   }
   
+  mostrar_tiempos('Archivos expandidos')
+  
   dtd <- dtc %>% 
     filter(dif_significativa(coalesce(.Valor, -987987654.321), 
                              coalesce(Previo, -987987654.321),
                              tolerancia_dif))
+  
+  
+  if (eliminar_arch_intermedios) rm(dtc, combinaciones)
+  mostrar_tiempos('Comparaciones')
   
   # Convert character vector to list of symbols
   dots <- lapply(vector_of_vars, as.symbol)
   dtd <- dtd %>% arrange_(.dots = vector_of_vars_arrange) %>% 
     ungroup %>% group_by_(.dots = dots)  # , .Variable
   
+  mostrar_tiempos('Dataframe ordenado')
+  
   if (v_fecha == '') {
     dth <- dtd %>% mutate('FchPrevia' = lead(Fecha_arch), DespuesDe_Dias = Fecha_arch - FchPrevia)
+    
+    mostrar_tiempos('FchPrevia generada')
+    
   } else { 
-    dtg <- dtd %>% mutate(DespuesDe_Dias =
-                            calendario_dias_semana[.(Fecha_arch), ix] -
-                            calendario_dias_semana[.(Fecha), ix])
+    if (dbg >= 1) browser()
+    fechas <- dtd %>% ungroup %>% select(Fecha_arch) %>% distinct(Fecha_arch)
+    fechas <- fechas %>% 
+      left_join(calendario_dias_semana, by = c('Fecha_arch' = 'fecha')) %>% 
+      mutate(ix = ix)
+             
+    dtd <- dtd %>% ungroup %>% left_join(fechas, by = 'Fecha_arch') %>% rename(DespuesDe_Dias = ix)
+
+    
+    fechas <- dtd %>% select(Fecha) %>% distinct(Fecha)
+    fechas <- fechas %>% 
+      left_join(calendario_dias_semana, by = c('Fecha' = 'fecha')) %>% 
+      mutate(ix = ix)
+    dtg <- dtd %>% left_join(fechas, by = 'Fecha') %>% mutate(DespuesDe_Dias = DespuesDe_Dias - ix)
+    
+    # dtg <- dtd %>% mutate(DespuesDe_Dias =
+    #                         calendario_dias_semana[.(Fecha_arch), ix] -
+    #                         calendario_dias_semana[.(Fecha), ix])
+    
+    if (eliminar_arch_intermedios) rm(dtd, fechas)
     
     # Algunos archivos se generan un sábado y dan NA porque no existen en
     # calendario: para este cálculo asumo que se generaron el viernes
@@ -420,16 +482,17 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
                                        calendario_dias_semana[.(Fecha), ix],
                                      DespuesDe_Dias)
       )
+    
+    mostrar_tiempos('DespuesDe_Dias generado')
+    
   }
   
   if (excluir_primer_aparicion) {
-    if (dbg >= 1) browser()
+    if (dbg >= 2) browser()
     dth <- dth %>% filter(Fecha_arch != ult_fecha)
     
-    # if (v_fecha != '') {
-    #   primer_fecha <- (dth %>% summarise(min(Fecha)))[[1]][1]
-    #   dth <- dth %>% filter(Fecha != primer_fecha)
-    # }
+    mostrar_tiempos('excluir_primer_aparicion generado')
+
   }
   
   if (tolerancia_dias != 0) {
@@ -438,12 +501,19 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     } else {
       dth <- dth %>% filter(DespuesDe_Dias <= -tolerancia_dias)
     }
+    
+    mostrar_tiempos('Filtro tolerancias')
+    
   }
   
   v1 <- c(v_variables, '.Variable', '.Valor', 'Previo', 'Fecha_arch', 'DespuesDe_Dias')
   dti <- dth %>% 
     select_(.dots = v1) %>% 
     arrange_(vector_of_vars_arrange)
+  
+  if (eliminar_arch_intermedios) rm(dth)
+  
+  mostrar_tiempos('Arreglos antes de generar archivos')
   
   if (dbg >= 2) browser()
   # pisp(dti, 'ALFA', 'RentDiaria')
@@ -455,8 +525,11 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
     cant_sin_cambios <- dti %>% filter(Fecha_arch == ult_fecha) %>% nrow()
     print(paste('TOTAL: ', cant_sin_cambios, 'sin cambios y', nrow(dti) - cant_sin_cambios, 'diferencias encontradas.'))
   }
-  write.csv(dti, file = paste(str_replace_all(today(), '-', ''), paste0('Cambios ', tipo_arch, '.csv')), row.names = FALSE)
-
+  if (dbg >= 1) browser()
+  write.csv(dti, file = paste(format(Sys.time(), '%Y-%m-%d_%H.%M'), paste0('Cambios ', tipo_arch, '.csv')), row.names = FALSE)
+  
+  mostrar_tiempos('Archivo cambios generado')
+  
   # Si pido comparar dos fechas, saco además una comparación de las v_variables excluyendo v_fecha
   if (!is.null(lista_fechas) && length(lista_fechas) == 2) {
     if (dbg >= 2) browser()
@@ -473,10 +546,11 @@ comparar_archivos <- function(tipo_arch, path_bkp, fecha_inic = fecha_base,
         .id = 'Archivo'
       )
     if (nrow(dif_key) > 0) {
-      write.csv(dif_key, file = paste(str_replace_all(today(), '-', ''), paste0('Diferencias claves ', tipo_arch, '.csv')), row.names = FALSE)
+      write.csv(dif_key, file = paste(format(Sys.time(), '%Y-%m-%d_%H.%M'), paste0('Diferencias claves ', tipo_arch, '.csv')), row.names = FALSE)
     } else {
       print('No se encontraron diferencias en la composición de las variables clave entre ambos archivos.')
     }
+    mostrar_tiempos('Archivo comparacion de claves generado')
   }
   return(invisible(NULL))
 }
